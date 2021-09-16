@@ -1,6 +1,7 @@
 # flake8: noqa
 import os
 from setuptools import setup, Extension, find_packages
+import pathlib
 
 # workaround for numpy and Cython install dependency
 # the solution is from https://stackoverflow.com/a/54138355
@@ -29,8 +30,14 @@ def my_build_ext(pars):
 
 here = os.path.abspath(os.path.dirname(__file__))
 # Get the long description from the README file
-with open(os.path.join(here, 'README.md')) as f:
-    long_description = f.read()
+#with open(os.path.join(here, 'README.md')) as f:
+#    long_description = f.read()
+# The directory containing this file
+HERE = pathlib.Path(__file__).parent
+
+# The text of the README file
+README = (HERE / "README.md").read_text()
+
 
 
 if os.name == 'nt':
@@ -86,7 +93,7 @@ setup(
     'This package finds similarities between rows of a table.',
     keywords='record-linkage cosine-similarity tf-idf string_grouper '
     'sparse_dot_topn python cython',
-    long_description=long_description,
+    long_description=README,
     long_description_content_type='text/markdown',
     url='https://github.com/ParticularMiner/red_string_grouper',
     download_url='https://github.com/ParticularMiner/red_string_grouper/'

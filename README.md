@@ -6,7 +6,7 @@ rows/records of a table with multiple fields.
 It is an extension of 
 *[String Grouper](https://github.com/Bergvca/string_grouper)*, a library that 
 makes finding groups of similar strings within one or two lists of strings 
-easy — and fast.
+easy ï¿½ and fast.
 
 # Installation
 
@@ -16,7 +16,7 @@ easy — and fast.
 How do we achieve matching for multiple fields and priorities?
 
 Import the function `record_linkage()` from `red_string_grouper` and specify 
-the fields of the table over which the comparison will be made. 
+the fields of the table over which the comparison will be made.
 
 ```python
 import pandas as pd 

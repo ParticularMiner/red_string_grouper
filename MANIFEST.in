@@ -1,0 +1,4 @@
+include README.md
+recursive-include red_string_grouper *.pyx
+recursive-include red_string_grouper *.h
+recursive-include red_string_grouper *.pxd

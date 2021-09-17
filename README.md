@@ -16,18 +16,17 @@ easy &mdash; and fast.
 How do we achieve matching for multiple fields and priorities?
 
 Import the function `record_linkage()` from `red_string_grouper` and specify 
-the fields of the table over which the comparison will be made.
+the fields of the table over which the comparisons will be made.
 
 ```python
 import pandas as pd 
 import numpy as np 
-from red_string_grouper import record_linkage
+from red_string_grouper import record_linkage, field
 
 matches = record_linkage(data_frame, fields_2b_matched_fuzzily,
                          fields_2b_matched_exactly=None,
-                         hierarchical=True, max_n_matches=None,
-                         similarity_dtype=np.float32, force_symmetries=True,
-                         n_blocks=None)
+                         hierarchical=True, force_symmetries=True,
+                         n_blocks=None, **kwargs)
 ```
                    
 This is a function that combines similarity-matching results of several fields of a 
@@ -38,20 +37,18 @@ Examples are given [below](#eg).
 |Parameter |Status |Description|
 |:---|:---:|:---|
 |`data_frame`| Required | `pandas.DataFrame` of strings which is the table over which the comparisons will be made.|
-|`fields_2b_matched_fuzzily`|Required| List of tuples.  Each tuple is a quadruple: <br>(&#9001;***field name***&#9002;, &#9001;***threshold***&#9002;, &#9001;***n-gram_size***&#9002;, &#9001;***weight***&#9002;). <br> &#9001;***field name***&#9002; is the name of a field in `data_frame` which is to be matched using a threshold similarity score of &#9001;***threshold***&#9002; and an n-gram size of &#9001;***n-gram_size***&#9002;. &#9001;***weight***&#9002; is a number that defines the **relative** importance of the field to other fields -- the field's contribution to the mean similarity will be weighted by this number. <br> &#9001;***weighted mean similarity score***&#9002; = <br> &nbsp; &nbsp; &nbsp; &nbsp; (**&Sigma;**<sub>*field*</sub> &#9001;***weight***&#9002;<sub>*field*</sub> &times; &#9001;***similarity***&#9002;<sub>*field*</sub>) / (**&Sigma;**<sub>*field*</sub>***weight***<sub>*field*</sub>), <br> where **&Sigma;**<sub>*field*</sub> means "sum over fields".|
-|`fields_2b_matched_exactly`| Optional| List of tuples.  Each tuple is a pair: <br> (&#9001;***field name***&#9002;, &#9001;***weight***&#9002;).<br> &#9001;***field name***&#9002; is the name of a field in `data_frame` which is to be matched exactly.  &#9001;***weight***&#9002; has the same meaning as in parameter `fields_2b_matched_fuzzily`. Defaults to `None`. |
+|`fields_2b_matched_fuzzily`|Required| List of tuples.  Each tuple is a triple: <br>(&#9001;***field name***&#9002;, &#9001;***weight***&#9002;, &#9001;***field_kwargs***&#9002;) <br> which is best input using the provided auxiliary function: `field()` in the following way: <br>`field(<field name>, weight=<weight>, **kwargs)`. <br><br> &#9001;***field name***&#9002; is a string denoting the name of a field in `data_frame` whose values are to be matched. <br><br> &#9001;***weight***&#9002; is a number (default: 1.0) that defines the **relative** importance of the field to other fields -- the field's contribution to the mean similarity will be weighted by this number. <br>&#9001;***weighted mean similarity score***&#9002; = <br> &nbsp; &nbsp; &nbsp; &nbsp; (**&Sigma;**<sub>*field*</sub> &#9001;***weight***&#9002;<sub>*field*</sub> &times; &#9001;***similarity***&#9002;<sub>*field*</sub>) / (**&Sigma;**<sub>*field*</sub>***weight***<sub>*field*</sub>), <br> where **&Sigma;**<sub>*field*</sub> means "sum over fields". <br><br> &#9001;***field_kwargs***&#9002; is a `dict` capturing any keyword arguments to be passed to `StringGrouper` for this field.  Any [`StringGrouper` keyword arguments](https://github.com/Bergvca/string_grouper#kwargs) specified for the \*\*kwargs of the `field()` function will be captured by &#9001;***field_kwargs***&#9002;.|
+|`fields_2b_matched_exactly`| Optional| List of tuples.  Each tuple is a pair: <br> (&#9001;***field name***&#9002;, &#9001;***weight***&#9002;).<br><br> &#9001;***field name***&#9002; is the name of a field in `data_frame` which is to be matched exactly.  <br><br> &#9001;***weight***&#9002; has the same meaning as in parameter `fields_2b_matched_fuzzily`. Defaults to `None`. |
 |`hierarchical`| Optional | `bool`.  Determines if the output DataFrame will have a hierarchical column-structure (`True`) or not (`False`). Defaults to `True`.|
-|`max_n_matches`| Optional | `int`. Maximum number of matches allowed per string.  Defaults to the total number of rows.|
-|`similarity_dtype`| Optional| `numpy` type.  Either `np.float32` (the default) or `np.float64`.  A value of `np.float32` allows for less memory overhead during computation but less numerical precision, while `np.float64` allows for greater numerical precision but a larger memory overhead.|
 |`force_symmetries`| Optional | `bool`. Specifies whether corrections should be made to the results to account for symmetry, thus compensating for those losses of numerical significance which violate the symmetry.  Defaults to `True`.|
 |`n_blocks` | Optional | `(int, int)`. This parameter is provided to help boost performance ([see below](#perf)) for large DataFrames, if possible, by splitting the DataFrames into `n_blocks[0]` blocks for the left operand (of the underlying matrix multiplication) and into `n_blocks[1]` blocks for the right operand before performing the string-comparisons blockwise. |
-
+|`**kwargs`| Optional| Any `string_grouper` keyword arguments may be specified here.  These will apply to all fields in `fields_2b_matched_fuzzily`.  However, any keyword arguments already given in `fields_2b_matched_fuzzily` take precedence over those specified here.  |
 # Examples <a name="eg"></a>
 
 ```python
 import pandas as pd 
 import numpy as np
-from red_string_grouper import record_linkage
+from red_string_grouper import record_linkage, field
 ```
 
 ## Prepare the Input Data:
@@ -248,16 +245,16 @@ To illustrate, the following call took
 
 ```python
 matches = record_linkage(
-	df,
-	fields_2b_matched_fuzzily=[('statusText', 0.8, 3, 1),
-	                           ('address', 0.8, 3, 1)],
-	fields_2b_matched_exactly=[('addressZipcode', 2),
-	                           ('addressState', 4),
-	                           ('hasVideo', 1)],
-	hierarchical=True,
-	max_n_matches=10000,
-	similarity_dtype=np.float32,
-	force_symmetries=False
+    df,
+    fields_2b_matched_fuzzily=[
+        field('statusText'),
+        field('address')
+    ],
+    fields_2b_matched_exactly=[
+        field('addressZipcode', weight=2),
+        field('addressState', weight=4),
+        field('hasVideo')
+    ]
 )
 ```
 whereas, the following call (which produces the same result) took &approx;8 seconds to run:
@@ -265,19 +262,20 @@ whereas, the following call (which produces the same result) took &approx;8 seco
 
 ```python
 matches = record_linkage(
-	df,
-	fields_2b_matched_fuzzily=[('statusText', 0.8, 3, 1),
-	                           ('address', 0.8, 3, 1),
-	                           ('addressZipcode', 0.999999, 3, 2)],
-	fields_2b_matched_exactly=[('addressState', 4),
-	                           ('hasVideo', 1)],
-	hierarchical=True,
-	max_n_matches=10000,
-	similarity_dtype=np.float32,
-	force_symmetries=False
+    df,
+    fields_2b_matched_fuzzily=[
+        field('statusText'),
+        field('address'),
+        field('addressZipcode', weight=2, min_similarity=0.9999)
+    ],
+    fields_2b_matched_exactly=[
+        field('addressState', weight=4),
+        field('hasVideo')
+    ]
 )
 ```
 
+Note that in the above calls, unspecified options, such as `weight` and [`string_grouper keyword arguments`](https://github.com/Bergvca/string_grouper#kwargs)) such as `min_similarity` and `ngram_size` take up their default values.  The default value for `weight` is `1.0`, while the default values for the `string_grouper` keyword arguments can be found at [this link](https://github.com/Bergvca/string_grouper#kwargs).
 Let's display the results:
 ```python
 matches
@@ -530,16 +528,14 @@ The following call took &approx;3 minutes 30 seconds to run:
 
 ```python
 record_linkage(
-	df,
-	fields_2b_matched_fuzzily=[('statusText', 0.8, 3, 1),
-	                           ('address', 0.8, 3, 1),
-	                           ('addressZipcode', 0.999999, 3, 2),
-	                           ('hasVideo', 0.999999, 3, 1),
-	                           ('addressState', 0.999999, 2, 4)],
-	hierarchical=True,
-	max_n_matches=10000,
-	similarity_dtype=np.float32,
-	force_symmetries=False
+    df,
+    fields_2b_matched_fuzzily=[
+        field('statusText'),
+        field('address'),
+        field('addressZipcode', weight=2, min_similarity=0.9999),
+        field('addressState', weight=4, ngram_size=2, min_similarity=0.9999),
+        field('hasVideo', min_similarity=0.9999)
+    ]
 )
 ```
 
@@ -831,16 +827,15 @@ headings by setting hierarchical to `False`:
 
 ```python
 record_linkage(
-	df,
-	fields_2b_matched_fuzzily=[('statusText', 0.8, 3, 1),
-	                           ('address', 0.8, 3, 1),
-	                           ('addressZipcode', 0.999999, 3, 2),
-	                           ('hasVideo', 0.999999, 3, 1),
-	                           ('addressState', 0.999999, 2, 4)],
-	hierarchical=False,
-	max_n_matches=10000,
-	similarity_dtype=np.float32,
-	force_symmetries=False
+    df,
+    fields_2b_matched_fuzzily=[
+        field('statusText'),
+        field('address'),
+        field('addressZipcode', weight=2, min_similarity=0.9999),
+        field('addressState', weight=4, ngram_size=2, min_similarity=0.9999),
+        field('hasVideo', min_similarity=0.9999)
+    ],
+    hierarchical=False
 )
 ```
 
@@ -992,7 +987,7 @@ record_linkage(
 
 String comparison, as implemented by `string_grouper`, is essentially matrix 
 multiplication.  A DataFrame of strings is converted (tokenized) into a 
-matrix.  Then that matrix is multiplied by itself.  
+matrix.  Then that matrix is multiplied by itself, or another.  
 
 Here is an illustration of multiplication of two matrices ***M*** and ***D***:
 ![Block Matrix 1 1](https://user-images.githubusercontent.com/78448465/133109334-1a42cf7b-1780-42a9-a465-340464abe583.png)
@@ -1024,7 +1019,7 @@ companies = pd.read_csv('data/sec__edgar_company_info.csv')
 # but is more than 3 times faster!
 record_linkage(
 	companies,
-	fields_2b_matched_fuzzily=[('Company Name', 0.8, 3, 1)],
+	fields_2b_matched_fuzzily=[field('Company Name')],
 	n_blocks=(4, 4)
 )
 ```
@@ -1037,11 +1032,12 @@ made:
 ![Block Matrix 1 2](https://user-images.githubusercontent.com/78448465/133109548-672c22ed-297a-4bad-ab99-0957c0527163.png)
 
 From the plot above, it can be seen that the optimum split-configuration 
-(run-time &approx;3 minutes) is when the left operand is not split 
-(#blocks = 1) and the right operand is split into six blocks (#nblocks = 6).
+(run-time &approx;3 minutes) for the DataFrame specified there is when the 
+left operand is not split (#blocks = 1) and the right operand is split into 
+six blocks (#nblocks = 6).
 
 So what are the optimum block number values for any given DataFrame? That is 
-anyone's guess, and the answer varies from computer to computer.  
+anyone's guess, and the answer may vary from computer to computer.  
 
 We however encourage the user to make judicious use of the `n_blocks` 
 parameter to boost performance of `record_linkage()`.

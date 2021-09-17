@@ -88,16 +88,16 @@ sparse_dot_topn_threaded_ext = Extension(
 
 setup(
     name='red_string_grouper',
-    version='0.0.3',
+    version='0.0.4',
     description='Row Equivalence Discoverer (red) based on string_grouper. '
     'This package finds similarities between rows of a table.',
-    keywords='record-linkage cosine-similarity tf-idf string_grouper '
-    'sparse_dot_topn python cython',
+    keywords='record-linkage string-comparison cosine-similarity tf-idf'
+    'string_grouper sparse_dot_topn python cython',
     long_description=README,
     long_description_content_type='text/markdown',
     url='https://github.com/ParticularMiner/red_string_grouper',
     download_url='https://github.com/ParticularMiner/red_string_grouper/'
-                 'archive/refs/tags/v0.0.3.tar.gz',
+                 'archive/refs/tags/v0.0.4.tar.gz',
     author='Particular Miner', 
     author_email='particularminer@fake.com',
     license='MIT',

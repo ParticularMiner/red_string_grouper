@@ -1,42 +1,52 @@
 import pandas as pd
 import numpy as np
 import functools
-from string_grouper import StringGrouper
+from string_grouper import StringGrouper, StringGrouperConfig
 from scipy.sparse.csr import csr_matrix
 from red_string_grouper.topn import awesome_topn
 from red_string_grouper.sparse_dot_topn import awesome_cossim_topn
+from typing import Optional
 
+
+def field(field_name: str, weight=1.0, **kwargs):
+    '''
+    Function that returns a triple corresponding to a field:
+    field_name, weight, StringGrouperConfig(**kwargs)
+    :param field_name: str
+    :param weight: relative priority given to this field.  Defaults to 1.0.
+    :param kwargs: keyword arguments to be passed to StringGrouper
+    '''
+    _ = StringGrouperConfig(**kwargs)   # validate kwargs
+    return field_name, weight, kwargs
 
 def record_linkage(data_frame,
                    fields_2b_matched_fuzzily,
                    fields_2b_matched_exactly=None,
                    hierarchical=True,
-                   max_n_matches=None,
-                   similarity_dtype=np.float32,
                    force_symmetries=True,
-                   n_blocks=None):
+                   n_blocks=None,
+                   **kwargs):
     '''
     Function that combines similarity-matching results of several fields of a
     DataFrame and returns them in another DataFrame
     :param data_frame: pandas.DataFrame of strings.
     :param fields_2b_matched_fuzzily: List of tuples.  Each tuple is a triple 
-        (<field name>, <threshold>, <ngram_size>, <weight>).
+        (<field name>, <weight>, <field_kwargs>) which can be input using 
+        utility function field(name, weight, **kwargs).
         <field name> is the name of a field in data_frame which is to be
-        matched using a threshold similarity score of <threshold> and an ngram
-        size of <ngram_size>. <weight> is a number that defines the
+        matched. <weight> is a number that defines the
         **relative** importance of the field to other fields -- the field's
         contribution to the total similarity will be weighted by this number.
+        <field_kwargs> is a python dict capturing any keyword arguments to be 
+        passed to StringGrouper for this field.
     :param fields_2b_matched_exactly: List of tuples.  Each tuple is a pair
-        (<field name>, <weight>).  <field name> is the name of a field in
-        data_frame which is to be matched exactly.  <weight> has the same
-        meaning as in parameter fields_2b_matched_fuzzily. Defaults to None.
+        (<field name>, <weight>) which can be input using 
+        utility function field(name, weight).  
+        <field name> is the name of a field in data_frame which is to be 
+        matched exactly.  <weight> has the same meaning as in parameter 
+        fields_2b_matched_fuzzily. Defaults to None.
     :param hierarchical: bool.  Determines if the output DataFrame will have a
         hierarchical column-structure (True) or not (False). Defaults to True.
-    :param max_n_matches: int. Maximum number of matches allowed per string.
-    :param similarity_dtype: numpy type.  Either np.float32 (the default) or
-        np.float64.  A value of np.float32 allows for less memory overhead
-        during computation but less numerical precision, while np.float64
-        allows for greater numerical precision but a larger memory overhead.
     :param force_symmetries: bool. Specifies whether corrections should be
         made to the results to account for symmetry thus removing certain
         errors due to lack of numerical precision.
@@ -45,26 +55,20 @@ def record_linkage(data_frame,
         blocks for the left operand (of the "comparison operator") and into
         n_blocks[1] blocks for the right operand before performing the
         string-comparisons blockwise.
+    :param kwargs: keyword arguments to be passed to StringGrouper for all 
+        "fields to be matched fuzzily".  However, any keyword arguments already
+        given in fields_2b_matched_fuzzily will take precedence over those 
+        given in kwargs.  
     :return: pandas.DataFrame containing matching results.
     '''
     def get_field_names(fields_tuples):
         return list(list(zip(*fields_tuples))[0])
     
-    def get_exact_weights(exact_field_tuples):
-        return list(list(zip(*exact_field_tuples))[1])
-    
-    def get_fuzzy_weights(fuzzy_field_tuples):
-        return list(list(zip(*fuzzy_field_tuples))[3])
+    def get_field_weights(field_tuples):
+        return list(list(zip(*field_tuples))[1])
     
     def get_field_value_pairs(field_names, values):
         return list(zip(field_names, values))
-    
-    def get_field_stringGrouper_pairs(fuzzy_field_tuples, string_groupers):
-        return [
-            (tupl[0], ) + (x, ) for tupl, x in list(
-                zip(fuzzy_field_tuples, string_groupers)
-            )
-        ]
     
     def get_index_names(df):
         empty_df = df.iloc[0:0]
@@ -85,10 +89,10 @@ def record_linkage(data_frame,
                            force_symmetries=False,
                            n_blocks=None):
         horizontal_merger_list = []
-        for field, sg in fuzzy_field_grouper_pairs:
+        for field_name, sg in fuzzy_field_grouper_pairs:
             matches = match_strings(
-                df[field],
-                sg,
+                df[field_name],
+                red_sg=sg,
                 force_symmetries=force_symmetries,
                 n_blocks=n_blocks
             )
@@ -96,18 +100,18 @@ def record_linkage(data_frame,
             matches = weed_out_trivial_matches(matches)
             if hierarchical:
                 merger = matches[
-                    [f'left_{field}', 'similarity', f'right_{field}']
+                    [f'left_{field_name}', 'similarity', f'right_{field_name}']
                 ]
                 merger.rename(
                     columns={
-                        f'left_{field}': 'left',
-                        f'right_{field}': 'right'
+                        f'left_{field_name}': 'left',
+                        f'right_{field_name}': 'right'
                     },
                     inplace=True
                 )
             else:
                 merger = matches[['similarity']]
-                merger.rename(columns={'similarity': field}, inplace=True)
+                merger.rename(columns={'similarity': field_name}, inplace=True)
             horizontal_merger_list += [merger]
             
         key_list = None if not hierarchical else fuzzy_field_names
@@ -202,29 +206,26 @@ def record_linkage(data_frame,
                 totals.rename(title_total, inplace=True)
         return totals
     
+    global_config = StringGrouperConfig(**kwargs)   # validate given kwargs
     index_name_list = get_index_names(data_frame)
     match_indexes = prepend(index_name_list, prefix='left_') \
         + prepend(index_name_list, prefix='right_')
     
     # set the corpus for each fuzzy field
-    stringGroupers = []
-    for field, threshold, ngram_sz, _ in fields_2b_matched_fuzzily:
-        stringGroupers += [
+    fuzzy_field_grouper_pairs = []
+    for field_name, _, sg_kwargs in fields_2b_matched_fuzzily:
+        red_sg_kwargs = global_config._asdict()
+        red_sg_kwargs.update(sg_kwargs)
+        fuzzy_field_grouper_pairs += [(
+            field_name,
             PersistentCorpusStringGrouper(
-                data_frame[field],
-                min_similarity=threshold,
-                ngram_size=ngram_sz,
-                max_n_matches=max_n_matches,
-                tfidf_matrix_dtype=similarity_dtype
+                data_frame[field_name],
+                **red_sg_kwargs
             )
-        ]
+        )]
  
-    fuzzy_field_grouper_pairs = get_field_stringGrouper_pairs(
-        fields_2b_matched_fuzzily,
-        stringGroupers
-    )
     fuzzy_field_names = get_field_names(fields_2b_matched_fuzzily)
-    fuzzy_field_weights = get_fuzzy_weights(fields_2b_matched_fuzzily)
+    fuzzy_field_weights = get_field_weights(fields_2b_matched_fuzzily)
     
     if not fields_2b_matched_exactly:
         return horizontal_linkage(
@@ -239,7 +240,7 @@ def record_linkage(data_frame,
         )
     else:
         exact_field_names = get_field_names(fields_2b_matched_exactly)
-        exact_field_weights = get_exact_weights(fields_2b_matched_exactly)
+        exact_field_weights = get_field_weights(fields_2b_matched_exactly)
         groups = data_frame.groupby(exact_field_names)
         vertical_merger_list = []
         for group_value, group_df in groups:
@@ -267,12 +268,45 @@ def record_linkage(data_frame,
             ]
         return pd.concat(vertical_merger_list)
     
-def match_strings(master, sg, force_symmetries=True, n_blocks=None):
-    sg._master = master
-    sg = sg.fit(force_symmetries=force_symmetries, n_blocks=n_blocks)
-    out = sg.get_matches()
-    sg._matches_list = None
-    sg._master = None
+def match_strings(master, duplicates=None, red_sg=None, 
+                  force_symmetries=True, n_blocks=None, **kwargs):
+    if not red_sg:
+        rsg = PersistentCorpusStringGrouper(master, duplicates, **kwargs)
+
+    red_sg._master = master
+    red_sg._duplicates = duplicates
+    red_sg = red_sg.fit(force_symmetries=force_symmetries, n_blocks=n_blocks)
+    out = red_sg.get_matches()
+    red_sg._matches_list = None
+    red_sg._master = None
+    return out
+        
+
+def match_most_similar(master, duplicates, red_sg=None, 
+                  force_symmetries=True, n_blocks=None, **kwargs):
+    kwargs['max_n_matches'] = 1
+    if not red_sg:
+        rsg = PersistentCorpusStringGrouper(master, duplicates, **kwargs)
+
+    red_sg._master = master
+    red_sg._duplicates = duplicates
+    red_sg = red_sg.fit(force_symmetries=force_symmetries, n_blocks=n_blocks)
+    out = red_sg.get_groups()
+    red_sg._matches_list = None
+    red_sg._master = None
+    return out
+        
+
+def group_similar_strings(master, red_sg=None, 
+                  force_symmetries=True, n_blocks=None, **kwargs):
+    if not red_sg:
+        rsg = PersistentCorpusStringGrouper(master, **kwargs)
+
+    red_sg._master = master
+    red_sg = red_sg.fit(force_symmetries=force_symmetries, n_blocks=n_blocks)
+    out = red_sg.get_groups()
+    red_sg._matches_list = None
+    red_sg._master = None
     return out
         
 
@@ -282,10 +316,14 @@ class PersistentCorpusStringGrouper(StringGrouper):
     # long as each master dataset is contained in the corpus. 
     # This class inherits from StringGrouper, overwriting a few of its
     # methods: __init__(), _get_tf_idf_matrices(), _build_matches() and fit(). 
-    def __init__(self, corpus, **kwargs):
+    def __init__(self, corpus, duplicates=None, **kwargs):
         # initializer is the same as before except that it now also sets the
         # corpus
-        super().__init__(corpus, **kwargs)
+        super().__init__(corpus, duplicates=duplicates, **kwargs)
+        if self._config.max_n_matches is None:
+            self._max_n_matches = len(self._master)
+        else:
+            self._max_n_matches = self._config.max_n_matches
         self._vectorizer = self._fit_vectorizer()
         self._master = None
 
@@ -296,15 +334,20 @@ class PersistentCorpusStringGrouper(StringGrouper):
         left_matrix = self._vectorizer.transform(
             self._master.iloc[slice(*left_partition)]
         )
-        right_matrix = self._vectorizer.transform(
-            self._master.iloc[slice(*right_partition)]
-        )
+        if self._duplicates:
+            right_matrix = self._vectorizer.transform(
+                self._duplicates.iloc[slice(*right_partition)]
+            )
+        else:
+            right_matrix = self._vectorizer.transform(
+                self._master.iloc[slice(*right_partition)]
+            )
         return left_matrix, right_matrix
 
     def _build_matches(self, master_matrix: csr_matrix, duplicate_matrix: csr_matrix) -> csr_matrix:
         """Builds the cossine similarity matrix of two csr matrices"""
-        tf_idf_matrix_1 = master_matrix
-        tf_idf_matrix_2 = duplicate_matrix.transpose()
+        tf_idf_matrix_1 = duplicate_matrix
+        tf_idf_matrix_2 = master_matrix.transpose()
 
         optional_kwargs = {
             'return_best_ntop': True,
@@ -319,11 +362,11 @@ class PersistentCorpusStringGrouper(StringGrouper):
             **optional_kwargs
         )
 
-    def fit_blockwise_manual(self, n_blocks=(1, 1)):
-        def divide_by(n):
+    def _fit_blockwise_manual(self, n_blocks=(1, 1)):
+        def divide_by(n, series):
             # mark blocks
-            equal_block_sz = len(self._master)//n
-            block_rem = len(self._master)%n
+            equal_block_sz = len(series)//n
+            block_rem = len(series)%n
             block_ranges = []
             start = 0
             for block_id in range(n):
@@ -337,8 +380,11 @@ class PersistentCorpusStringGrouper(StringGrouper):
                 start = block_ranges[-1][1]
             return block_ranges
             
-        block_ranges_left = divide_by(n_blocks[0])
-        block_ranges_right = divide_by(n_blocks[1])
+        block_ranges_left = divide_by(n_blocks[0], self._master)
+        if self._duplicates:
+            block_ranges_right = divide_by(n_blocks[1], self._duplicates)
+        else:
+            block_ranges_right = divide_by(n_blocks[1], self._master)
         max_n_matches = self._max_n_matches
         for left_block in block_ranges_left:
             for right_block in block_ranges_right:
@@ -347,8 +393,8 @@ class PersistentCorpusStringGrouper(StringGrouper):
                     max_n_matches
                 )
                 master_matrix, duplicate_matrix = self._get_tf_idf_matrices(
-                    left_block,
-                    right_block
+                    right_block,
+                    left_block
                 )
 
                 # Calculate the matches using the cosine similarity
@@ -367,17 +413,14 @@ class PersistentCorpusStringGrouper(StringGrouper):
                 )
                 
         self._max_n_matches = max_n_matches
-        return True
+        return max(n_blocks) > 1
 
-    def fit_blockwise_auto(self,
+    def _fit_blockwise_auto(self,
                            left_partition=(None, None),
                            right_partition=(None, None)):
-        """
-        Builds the _matches list which contains string matches indices and
-        similarity
-        """
         # fit() has been extended here to enable StringGrouper to handle large
         # datasets which otherwise would lead to an OverflowError
+        # The handling is achieved using block matrix multiplication
         def begin(partition):
             return partition[0] if partition[0] else 0
 
@@ -417,7 +460,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
                         rhalf[1] - rhalf[0],
                         max_n_matches
                     )
-                    self.fit_blockwise_auto(
+                    self._fit_blockwise_auto(
                         left_partition=lhalf,
                         right_partition=rhalf
                     )
@@ -444,9 +487,9 @@ class PersistentCorpusStringGrouper(StringGrouper):
         
         # do the matching
         if n_blocks:
-            split_occurred = self.fit_blockwise_manual(n_blocks=n_blocks)
+            split_occurred = self._fit_blockwise_manual(n_blocks=n_blocks)
         else:
-            split_occurred = self.fit_blockwise_auto()
+            split_occurred = self._fit_blockwise_auto()
         
         if split_occurred:
             # trim the matches to max_n_matches
@@ -459,7 +502,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
             )
         
         # force symmetries to be respected?
-        if force_symmetries:
+        if force_symmetries and not self._duplicates:
             matrix_sz = len(self._master)
             matches = csr_matrix(
                 (
@@ -483,16 +526,24 @@ class PersistentCorpusStringGrouper(StringGrouper):
             matches = matches.tocsr()
             self._matches_list = self._get_matches_list(matches)
         else:
-            self._matches_list = pd.DataFrame(
-                {
-                    key: value for key, value in zip(
-                        ('master_side', 'dupe_side', 'similarity'),
-                        (self._r, self._c, self._d)
-                    )
-                }
-            )
+            self._matches_list = self._get_matches_list()
             # release memory
             self._r = self._c = self._d = np.array([])
             
         self.is_build = True
         return self
+
+    def _get_matches_list(self,
+                          matches: Optional[csr_matrix] = None
+        ) -> pd.DataFrame:
+        """Returns a list of all the indices of matches"""
+        if matches is None:
+            r, c, d = self._r, self._c, self._d
+        else:
+            r, c = matches.nonzero()
+            d = matches.data
+
+        return pd.DataFrame({'master_side': c,
+                             'dupe_side': r,
+                             'similarity': d})
+        return matches_list

@@ -235,7 +235,7 @@ performance boost.
 
 Behind the scenes, this allows `record_linkage()` to avoid using cosine-
 similarity matching on these fields (which is time-consuming, since many 
-matches are likely to be found), and instead group by these fields.
+matches are likely to be found), and instead group the data by these fields.
 
 In this way, cosine-similarity matching can be performed only on the other 
 fields (in parameter `fields_2b_matched_fuzzily`) for each group.

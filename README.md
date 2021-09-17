@@ -6,7 +6,7 @@ rows/records of a table with multiple fields.
 It is an extension of 
 *[String Grouper](https://github.com/Bergvca/string_grouper)*, a library that 
 makes finding groups of similar strings within one or two lists of strings 
-easy � and fast.
+easy &mdash; and fast.
 
 # Installation
 
@@ -31,23 +31,26 @@ matches = record_linkage(data_frame, fields_2b_matched_fuzzily,
 ```
                    
 This is a function that combines similarity-matching results of several fields of a 
-DataFrame (`data_frame`) and returns them in another DataFrame (`matches`).
+DataFrame (`data_frame`) and returns them in another DataFrame (`matches`).  
+
+Examples are given [below](#eg).
 
 |Parameter |Status |Description|
 |:---|:---:|:---|
 |`data_frame`| Required | `pandas.DataFrame` of strings which is the table over which the comparisons will be made.|
-|`fields_2b_matched_fuzzily`|Required| List of tuples.  Each tuple is a quadruple: <br>(\<***field name***\>, \<***threshold***\>, \<***ngram_size***\>, \<***weight***\>). <br> \<***field name***\> is the name of a field in `data_frame` which is to be matched using a threshold similarity score of \<***threshold***\> and an ngram size of \<***ngram_size***\>. \<***weight***\> is a number that defines the **relative** importance of the field to other fields -- the field's contribution to the mean similarity will be weighted by this number. <br> \<***weighted mean similarity score***\> = (**&Sigma;**<sub>*field*</sub> \<***weight***\><sub>*field*</sub> &times; \<***similarity***\><sub>*field*</sub>) / (**&Sigma;**<sub>*field*</sub>***weight***<sub>*field*</sub>), <br> where **&Sigma;**<sub>*field*</sub> means "sum over fields".|
-|`fields_2b_matched_exactly`| Optional| List of tuples.  Each tuple is a pair: <br> (\<***field name***\>, \<***weight***\>).<br> \<***field name***\> is the name of a field in `data_frame` which is to be matched exactly.  \<***weight***\> has the same meaning as in parameter `fields_2b_matched_fuzzily`. Defaults to `None`. |
+|`fields_2b_matched_fuzzily`|Required| List of tuples.  Each tuple is a quadruple: <br>(&#9001;***field name***&#9002;, &#9001;***threshold***&#9002;, &#9001;***n-gram_size***&#9002;, &#9001;***weight***&#9002;). <br> &#9001;***field name***&#9002; is the name of a field in `data_frame` which is to be matched using a threshold similarity score of &#9001;***threshold***&#9002; and an n-gram size of &#9001;***n-gram_size***&#9002;. &#9001;***weight***&#9002; is a number that defines the **relative** importance of the field to other fields -- the field's contribution to the mean similarity will be weighted by this number. <br> &#9001;***weighted mean similarity score***&#9002; = <br> &nbsp; &nbsp; &nbsp; &nbsp; (**&Sigma;**<sub>*field*</sub> &#9001;***weight***&#9002;<sub>*field*</sub> &times; &#9001;***similarity***&#9002;<sub>*field*</sub>) / (**&Sigma;**<sub>*field*</sub>***weight***<sub>*field*</sub>), <br> where **&Sigma;**<sub>*field*</sub> means "sum over fields".|
+|`fields_2b_matched_exactly`| Optional| List of tuples.  Each tuple is a pair: <br> (&#9001;***field name***&#9002;, &#9001;***weight***&#9002;).<br> &#9001;***field name***&#9002; is the name of a field in `data_frame` which is to be matched exactly.  &#9001;***weight***&#9002; has the same meaning as in parameter `fields_2b_matched_fuzzily`. Defaults to `None`. |
 |`hierarchical`| Optional | `bool`.  Determines if the output DataFrame will have a hierarchical column-structure (`True`) or not (`False`). Defaults to `True`.|
 |`max_n_matches`| Optional | `int`. Maximum number of matches allowed per string.  Defaults to the total number of rows.|
 |`similarity_dtype`| Optional| `numpy` type.  Either `np.float32` (the default) or `np.float64`.  A value of `np.float32` allows for less memory overhead during computation but less numerical precision, while `np.float64` allows for greater numerical precision but a larger memory overhead.|
-|`force_symmetries`| Optional | `bool`. Specifies whether corrections should be made to the results to account for symmetry thus circumventing some errors which result from loss of numerical significance.  Defaults to `True`.|
-|`n_blocks` | Optional | `(int, int)`. This parameter is provided to boost performance, if possible, by splitting the dataset into `n_blocks[0]` blocks for the left operand (of the "comparison operator") and into `n_blocks[1]` blocks for the right operand before performing the string-comparisons blockwise. |
+|`force_symmetries`| Optional | `bool`. Specifies whether corrections should be made to the results to account for symmetry, thus compensating for those losses of numerical significance which violate the symmetry.  Defaults to `True`.|
+|`n_blocks` | Optional | `(int, int)`. This parameter is provided to help boost performance ([see below](#perf)) for large DataFrames, if possible, by splitting the DataFrames into `n_blocks[0]` blocks for the left operand (of the underlying matrix multiplication) and into `n_blocks[1]` blocks for the right operand before performing the string-comparisons blockwise. |
 
-# Examples
+# Examples <a name="eg"></a>
 
 ```python
 import pandas as pd 
+import numpy as np
 from red_string_grouper import record_linkage
 ```
 
@@ -55,8 +58,9 @@ from red_string_grouper import record_linkage
 Here's some sample data:
 
 ```python
-inputfilename = 'data/us-cities-real-estate-sample-zenrows.csv'
-df = pd.read_csv(inputfilename, dtype=str)
+file = 'data/us-cities-real-estate-sample-zenrows.csv'
+df = pd.read_csv(file, dtype = str, keep_default_na=False)  # all strings
+dfna = pd.read_csv(file, dtype = str, keep_default_na=True) # has null-values
 ```
 
 Note that the data has been read into memory as strings (`dtype=str`), since 
@@ -72,35 +76,144 @@ len(df)
     10000
 
 
-Let us examine the data to determine which fields to compare (that is, use only 
-columns without *null* or *NaN* data).
-At the same time, we will also check how many unique values each field has: 
+Let us examine the data to determine which fields are good to compare 
+(that is, we will use only columns without *null* or *NaN* data).
+At the same time, we will also check how many unique values each field has 
+and its maximum string-length (to inform our choice of its n-gram size): 
 
 ```python
-for field in df.columns:
-    if df[field].nunique() > 1 and not df[field].isna().values.any():
-        print(f'{field} : {df[field].nunique()}')
+column_info = pd.concat(
+    [
+        df.nunique().rename('#unique'),
+        dfna.isna().any().rename('has null?'),
+        df.applymap(len).max().rename('max strlen')
+    ],
+    axis=1
+).rename_axis("column").reset_index()
+
+column_info[
+    (column_info['#unique'] > 1) & (~column_info['has null?'])
+]
 ```
 
-    zpid : 10000
-    id : 10000
-    imgSrc : 9940
-    detailUrl : 10000
-    statusText : 24
-    address : 10000
-    addressState : 51
-    addressZipcode : 6446
-    isUndisclosedAddress : 2
-    isZillowOwned : 2
-    has3DModel : 2
-    hasVideo : 2
-    isFeaturedListing : 2
-    list : 2
-    
+<div>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>column</th>
+      <th>#unique</th>
+      <th>has null?</th>
+      <th>max strlen</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>zpid</td>
+      <td>10000</td>
+      <td>False</td>
+      <td>10</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>id</td>
+      <td>10000</td>
+      <td>False</td>
+      <td>10</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>imgSrc</td>
+      <td>9940</td>
+      <td>False</td>
+      <td>231</td>
+    </tr>
+    <tr>
+      <th>5</th>
+      <td>detailUrl</td>
+      <td>10000</td>
+      <td>False</td>
+      <td>121</td>
+    </tr>
+    <tr>
+      <th>7</th>
+      <td>statusText</td>
+      <td>24</td>
+      <td>False</td>
+      <td>26</td>
+    </tr>
+    <tr>
+      <th>11</th>
+      <td>address</td>
+      <td>10000</td>
+      <td>False</td>
+      <td>72</td>
+    </tr>
+    <tr>
+      <th>14</th>
+      <td>addressState</td>
+      <td>51</td>
+      <td>False</td>
+      <td>2</td>
+    </tr>
+    <tr>
+      <th>15</th>
+      <td>addressZipcode</td>
+      <td>6446</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>16</th>
+      <td>isUndisclosedAddress</td>
+      <td>2</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>22</th>
+      <td>isZillowOwned</td>
+      <td>2</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>31</th>
+      <td>has3DModel</td>
+      <td>2</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>32</th>
+      <td>hasVideo</td>
+      <td>2</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>38</th>
+      <td>isFeaturedListing</td>
+      <td>2</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+    <tr>
+      <th>39</th>
+      <td>list</td>
+      <td>2</td>
+      <td>False</td>
+      <td>5</td>
+    </tr>
+  </tbody>
+</table>
+</div>
 
-We may set field `'zpid'` as the index, since it has exactly the same number 
+
+Thus we may set field `'zpid'` as the index, since it has exactly the same number 
 of unique values as the number of rows.  `zpid` will thus be used to identify 
-each row.
+each row in the matching results.
 
 
 ```python
@@ -111,7 +224,7 @@ df.set_index('zpid', inplace=True)
 There is more than one way to achieve the same matching result.  But some ways are faster than others, depending on the data.
 
 ### Plot comparing Runtimes of `record_linkage()` calls with and without grouping on a test field having a varying number of unique values in a 10 000-row DataFrame
-<center><img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/Fuzzy_vs_Exact.png"></center>
+<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/Fuzzy_vs_Exact.png">
 
 ### 1. Grouping by fields that are to be matched exactly
 Note that those fields that have very few unique values distributed among a 
@@ -872,10 +985,10 @@ record_linkage(
 <p>94 rows &times; 6 columns</p>
 </div>
 
-# Performance
+# Performance<a name="perf"></a>
 
 ## Plots of Runtimes of `record_linkage()` vs the number of blocks (`#blocks`) into which the left matrix-operand of the dataset (380 000 strings from sec__edgar_company_info.csv) was split before performing the string comparison.  As shown in the legend, each plot corresponds to the number of blocks into which the left matrix-operand was split.
-<center><img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/BlockSpaceExploration.png"></center>
+<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/BlockSpaceExploration.png">
 
 String comparison, as implemented by `string_grouper`, is essentially matrix 
 multiplication.  A DataFrame of strings is converted (tokenized) into a 
@@ -902,19 +1015,16 @@ as a result.  For example, the speed-up of the following call is about 200%
 `match_strings()`:
 
 ```python
+# 668000 records:
 companies = pd.read_csv('data/sec__edgar_company_info.csv')
 
 # the following call produces the same result as 
 # string_grouper using 
 # match_strings(companies['Company Name'])
+# but is more than 3 times faster!
 record_linkage(
 	companies,
 	fields_2b_matched_fuzzily=[('Company Name', 0.8, 3, 1)],
-	fields_2b_matched_exactly=None,
-	hierarchical=True,
-	max_n_matches=10000,
-	similarity_dtype=np.float32,
-	force_symmetries=True,
 	n_blocks=(4, 4)
 )
 ```
@@ -926,15 +1036,13 @@ made:
 
 ![Block Matrix 1 2](https://user-images.githubusercontent.com/78448465/133109548-672c22ed-297a-4bad-ab99-0957c0527163.png)
 
-Here are some plots of the results of some experiments performed:
-
 From the plot above, it can be seen that the optimum split-configuration 
 (run-time &approx;3 minutes) is when the left operand is not split 
 (#blocks = 1) and the right operand is split into six blocks (#nblocks = 6).
 
-So what are the optimum block number values for a given DataFrame? That is 
-anyone's guess, and the answer may vary from computer to computer.  
+So what are the optimum block number values for any given DataFrame? That is 
+anyone's guess, and the answer varies from computer to computer.  
 
 We however encourage the user to make judicious use of the `n_blocks` 
-parameter.
+parameter to boost performance of `record_linkage()`.
 

@@ -271,7 +271,7 @@ def record_linkage(data_frame,
 def match_strings(master, duplicates=None, red_sg=None, 
                   force_symmetries=True, n_blocks=None, **kwargs):
     if not red_sg:
-        rsg = PersistentCorpusStringGrouper(master, duplicates, **kwargs)
+        red_sg = PersistentCorpusStringGrouper(master, duplicates, **kwargs)
 
     red_sg._master = master
     red_sg._duplicates = duplicates
@@ -286,7 +286,7 @@ def match_most_similar(master, duplicates, red_sg=None,
                   force_symmetries=True, n_blocks=None, **kwargs):
     kwargs['max_n_matches'] = 1
     if not red_sg:
-        rsg = PersistentCorpusStringGrouper(master, duplicates, **kwargs)
+        red_sg = PersistentCorpusStringGrouper(master, duplicates, **kwargs)
 
     red_sg._master = master
     red_sg._duplicates = duplicates
@@ -300,7 +300,7 @@ def match_most_similar(master, duplicates, red_sg=None,
 def group_similar_strings(master, red_sg=None, 
                   force_symmetries=True, n_blocks=None, **kwargs):
     if not red_sg:
-        rsg = PersistentCorpusStringGrouper(master, **kwargs)
+        red_sg = PersistentCorpusStringGrouper(master, **kwargs)
 
     red_sg._master = master
     red_sg = red_sg.fit(force_symmetries=force_symmetries, n_blocks=n_blocks)
@@ -422,10 +422,12 @@ class PersistentCorpusStringGrouper(StringGrouper):
         # datasets which otherwise would lead to an OverflowError
         # The handling is achieved using block matrix multiplication
         def begin(partition):
-            return partition[0] if partition[0] else 0
+            return partition[0] if partition[0] is not None else 0
 
-        def end(partition):
-            return partition[1] if partition[1] else len(self._master)
+        def end(partition, left=True):
+            stop = len(self._master) if left or (duplicates is None) \
+                else len(self._duplicates)
+            return partition[1] if partition[1] is not None else stop
         
         def explicit(partition):
             return begin(partition), end(partition)
@@ -446,14 +448,14 @@ class PersistentCorpusStringGrouper(StringGrouper):
             duplicate_matrix = None
             max_n_matches = self._max_n_matches
             
-            def split_partition(partition):
+            def split_partition(partition, left=True):
                 data_begin = begin(partition)
-                data_end = end(partition)
+                data_end = end(partition, left=left)
                 data_mid = data_begin + (data_end - data_begin)//2
                 return [(data_begin, data_mid), (data_mid, data_end)]
             
-            left_halves = split_partition(left_partition)
-            right_halves = split_partition(right_partition)
+            left_halves = split_partition(left_partition, left=True)
+            right_halves = split_partition(right_partition, left=False)
             for lhalf in left_halves:
                 for rhalf in right_halves:
                     self._max_n_matches = min(

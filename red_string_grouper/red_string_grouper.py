@@ -327,22 +327,26 @@ class PersistentCorpusStringGrouper(StringGrouper):
         self._vectorizer = self._fit_vectorizer()
         self._master = None
 
-    def _get_tf_idf_matrices(self, left_partition, right_partition):
-        # _get_tf_idf_matrices() now no longer sets the corpus but rather
-        # builds the matrices from the existing corpus
-        # Build the two matrices
+    def _get_left_tf_idf_matrix(self, partition):
+        # unlike _get_tf_idf_matrices(), _get_left_tf_idf_matrix
+        # does not set the corpus but rather
+        # builds a matrix using the existing corpus
         if self._duplicates is not None:
-            left_matrix = self._vectorizer.transform(
-                self._duplicates.iloc[slice(*left_partition)]
+            return self._vectorizer.transform(
+                self._duplicates.iloc[slice(*partition)]
             )
         else:
-            left_matrix = self._vectorizer.transform(
-                self._master.iloc[slice(*left_partition)]
+            return self._vectorizer.transform(
+                self._master.iloc[slice(*partition)]
             )
-        right_matrix = self._vectorizer.transform(
-            self._master.iloc[slice(*right_partition)]
+
+    def _get_right_tf_idf_matrix(self, partition):
+        # unlike _get_tf_idf_matrices(), _get_right_tf_idf_matrix
+        # does not set the corpus but rather
+        # builds a matrix using the existing corpus
+        return self._vectorizer.transform(
+            self._master.iloc[slice(*partition)]
         )
-        return left_matrix, right_matrix
 
     def _build_matches(self, left_matrix: csr_matrix, right_matrix: csr_matrix) -> csr_matrix:
         """Builds the cossine similarity matrix of two csr matrices"""
@@ -386,20 +390,17 @@ class PersistentCorpusStringGrouper(StringGrouper):
         block_ranges_right = divide_by(n_blocks[1], self._master)
         max_n_matches = self._max_n_matches
         for left_block in block_ranges_left:
+            left_matrix = self._get_left_tf_idf_matrix(left_block)
             for right_block in block_ranges_right:
                 self._max_n_matches = min(
                     right_block[1] - right_block[0],
                     max_n_matches
                 )
-                left_matrix, right_matrix = self._get_tf_idf_matrices(
-                    left_block,
-                    right_block
-                )
+                right_matrix = self._get_right_tf_idf_matrix(right_block)
 
                 # Calculate the matches using the cosine similarity
                 matches, self._true_max_n_matches = self._build_matches(
-                    left_matrix,
-                    right_matrix
+                    left_matrix, right_matrix
                 )
                 
                 # build match-lists from matrix
@@ -435,8 +436,8 @@ class PersistentCorpusStringGrouper(StringGrouper):
         def explicit(partition):
             return begin(partition), end(partition)
 
-        left_matrix, right_matrix = self._get_tf_idf_matrices(
-            left_partition, right_partition)
+        left_matrix = self._get_left_tf_idf_matrix(left_partition)
+        right_matrix = self._get_right_tf_idf_matrix(right_partition)
 
         try:
             # Calculate the matches using the cosine similarity
@@ -462,9 +463,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
                         max_n_matches
                     )
                     _ = self._fit_blockwise_auto(
-                        left_partition=lhalf,
-                        right_partition=rhalf
-                    )
+                        left_partition=lhalf, right_partition=rhalf)
             self._max_n_matches = max_n_matches
             return True
 

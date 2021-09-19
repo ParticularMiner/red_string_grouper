@@ -331,23 +331,22 @@ class PersistentCorpusStringGrouper(StringGrouper):
         # _get_tf_idf_matrices() now no longer sets the corpus but rather
         # builds the matrices from the existing corpus
         # Build the two matrices
-        left_matrix = self._vectorizer.transform(
-            self._master.iloc[slice(*left_partition)]
-        )
-        if self._duplicates:
-            right_matrix = self._vectorizer.transform(
-                self._duplicates.iloc[slice(*right_partition)]
+        if self._duplicates is not None:
+            left_matrix = self._vectorizer.transform(
+                self._duplicates.iloc[slice(*left_partition)]
             )
         else:
-            right_matrix = self._vectorizer.transform(
-                self._master.iloc[slice(*right_partition)]
+            left_matrix = self._vectorizer.transform(
+                self._master.iloc[slice(*left_partition)]
             )
+        right_matrix = self._vectorizer.transform(
+            self._master.iloc[slice(*right_partition)]
+        )
         return left_matrix, right_matrix
 
-    def _build_matches(self, master_matrix: csr_matrix, duplicate_matrix: csr_matrix) -> csr_matrix:
+    def _build_matches(self, left_matrix: csr_matrix, right_matrix: csr_matrix) -> csr_matrix:
         """Builds the cossine similarity matrix of two csr matrices"""
-        tf_idf_matrix_1 = duplicate_matrix
-        tf_idf_matrix_2 = master_matrix.transpose()
+        right_matrix = right_matrix.transpose()
 
         optional_kwargs = {
             'return_best_ntop': True,
@@ -356,7 +355,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
         }
 
         return awesome_cossim_topn(
-            tf_idf_matrix_1, tf_idf_matrix_2,
+            left_matrix, right_matrix,
             self._max_n_matches,
             self._config.min_similarity,
             **optional_kwargs
@@ -380,11 +379,11 @@ class PersistentCorpusStringGrouper(StringGrouper):
                 start = block_ranges[-1][1]
             return block_ranges
             
-        block_ranges_left = divide_by(n_blocks[0], self._master)
-        if self._duplicates:
-            block_ranges_right = divide_by(n_blocks[1], self._duplicates)
+        if self._duplicates is not None:
+            block_ranges_left = divide_by(n_blocks[0], self._duplicates)
         else:
-            block_ranges_right = divide_by(n_blocks[1], self._master)
+            block_ranges_left = divide_by(n_blocks[0], self._master)
+        block_ranges_right = divide_by(n_blocks[1], self._master)
         max_n_matches = self._max_n_matches
         for left_block in block_ranges_left:
             for right_block in block_ranges_right:
@@ -392,15 +391,15 @@ class PersistentCorpusStringGrouper(StringGrouper):
                     right_block[1] - right_block[0],
                     max_n_matches
                 )
-                master_matrix, duplicate_matrix = self._get_tf_idf_matrices(
-                    right_block,
-                    left_block
+                left_matrix, right_matrix = self._get_tf_idf_matrices(
+                    left_block,
+                    right_block
                 )
 
                 # Calculate the matches using the cosine similarity
                 matches, self._true_max_n_matches = self._build_matches(
-                    master_matrix,
-                    duplicate_matrix
+                    left_matrix,
+                    right_matrix
                 )
                 
                 # build match-lists from matrix
@@ -425,27 +424,27 @@ class PersistentCorpusStringGrouper(StringGrouper):
             return partition[0] if partition[0] is not None else 0
 
         def end(partition, left=True):
-            stop = len(self._master) if left or (duplicates is None) \
-                else len(self._duplicates)
-            return partition[1] if partition[1] is not None else stop
+            if partition[1] is not None:
+                return partition[1]
+            
+            if left and (self._duplicates is not None):
+                return len(self._duplicates) 
+            
+            return len(self._master)
         
         def explicit(partition):
             return begin(partition), end(partition)
 
-        master_matrix, duplicate_matrix = self._get_tf_idf_matrices(
-            left_partition,
-            right_partition
-        )
+        left_matrix, right_matrix = self._get_tf_idf_matrices(
+            left_partition, right_partition)
 
         try:
             # Calculate the matches using the cosine similarity
             matches, self._true_max_n_matches = self._build_matches(
-                master_matrix,
-                duplicate_matrix
-            )
+                left_matrix, right_matrix)
         except OverflowError:
-            master_matrix = None
-            duplicate_matrix = None
+            left_matrix = None
+            right_matrix = None
             max_n_matches = self._max_n_matches
             
             def split_partition(partition, left=True):
@@ -462,7 +461,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
                         rhalf[1] - rhalf[0],
                         max_n_matches
                     )
-                    self._fit_blockwise_auto(
+                    _ = self._fit_blockwise_auto(
                         left_partition=lhalf,
                         right_partition=rhalf
                     )
@@ -496,9 +495,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
         if split_occurred:
             # trim the matches to max_n_matches
             self._r, self._c, self._d = awesome_topn(
-                self._r,
-                self._c,
-                self._d,
+                self._r, self._c, self._d,
                 self._max_n_matches,
                 self._config.number_of_processes
             )

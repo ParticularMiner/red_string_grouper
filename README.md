@@ -220,8 +220,8 @@ df.set_index('zpid', inplace=True)
 ## Call `record_linkage()`:
 There is more than one way to achieve the same matching result.  But some ways are faster than others, depending on the data.
 
-### Plot comparing Runtimes of `record_linkage()` calls with and without grouping on a test field having a varying number of unique values in a 10 000-row DataFrame
-<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/Fuzzy_vs_Exact.png">
+### Plot comparing run-times of `record_linkage()` calls with and without grouping on a test field having a varying number of unique values in a 10 000-row DataFrame
+<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/Fuzzy_vs_Exact.png">
 
 ### 1. Grouping by fields that are to be matched exactly
 Note that those fields that have very few unique values distributed among a 
@@ -982,15 +982,15 @@ record_linkage(
 
 # Performance<a name="perf"></a>
 
-## Plots of run-times of `record_linkage()` vs the number of blocks (`#blocks`) into which the right matrix-operand of the dataset (380 000 strings from sec__edgar_company_info.csv) was split before performing the string comparison.  As shown in the legend, each plot corresponds to the number of blocks into which the left matrix-operand was split.
-<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/BlockSpaceExploration.png">
+### Plots of run-times of `record_linkage()` vs the number of blocks (`#blocks`) into which the right matrix-operand of the dataset (380 000 strings from sec__edgar_company_info.csv) was split before performing the string comparison.  As shown in the legend, each plot corresponds to the number of blocks into which the left matrix-operand was split.
+<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockSpaceExploration.png">
 
 String comparison, as implemented by `string_grouper`, is essentially matrix 
 multiplication.  A DataFrame of strings is converted (tokenized) into a 
-matrix.  Then that matrix is multiplied by itself, or another.  
+matrix.  Then that matrix is multiplied by itself (or another) transposed.  
 
-Here is an illustration of multiplication of two matrices ***M*** and ***D***:
-![Block Matrix 1 1](https://user-images.githubusercontent.com/78448465/133109334-1a42cf7b-1780-42a9-a465-340464abe583.png)
+Here is an illustration of multiplication of two matrices ***D*** and ***M***<sup>T</sup>:
+![Block Matrix 1 1](https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockMatrix_1_1.png)
 
 It turns out that when the matrix (or DataFrame) is very large, the computer 
 proceeds quite slowly with the multiplication (apparently due to the RAM being 
@@ -1000,7 +1000,7 @@ To circumvent this issue, `red_string_grouper` allows to divide the DataFrame
 into smaller chunks (or blocks) and multiply the chunks one pair at a time 
 instead to get the same result:
 
-![Block Matrix 2 2](https://user-images.githubusercontent.com/78448465/133109377-76be7c85-a16d-4fcc-ade4-c2b475df6d0c.png)
+![Block Matrix 2 2](https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockMatrix_2_2.png)
 
 But surprise ... the run-time of the process is sometimes drastically reduced 
 as a result.  For example, the speed-up of the following call is about 200% 
@@ -1029,7 +1029,7 @@ Further exploration of the block number space shows that if the left operand
 is not split but the right operand is, then even more gains in speed can be 
 made:
 
-![Block Matrix 1 2](https://user-images.githubusercontent.com/78448465/133109548-672c22ed-297a-4bad-ab99-0957c0527163.png)
+![Block Matrix 1 2](https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockMatrix_1_2.png)
 
 From the plot above, it can be seen that the optimum split-configuration 
 (run-time &approx;3 minutes) for the DataFrame specified there is when the 

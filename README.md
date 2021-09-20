@@ -982,8 +982,8 @@ record_linkage(
 
 # Performance<a name="perf"></a>
 
-### Plots of run-times of `record_linkage()` vs the number of blocks (`#blocks`) into which the right matrix-operand of the dataset (380 000 strings from sec__edgar_company_info.csv) was split before performing the string comparison.  As shown in the legend, each plot corresponds to the number of blocks into which the left matrix-operand was split.
-<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockSpaceExploration.png">
+### Plots of run-times of `record_linkage()` vs the number `n_blocks[1]` of blocks into which the right matrix-operand of the dataset (663 000 strings from sec__edgar_company_info.csv) was split before performing the string comparison.  As shown in the legend, each plot corresponds to the number `n_blocks[0]` of blocks into which the left matrix-operand was split.
+<img width="100%" src="https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockNumberSpaceExploration1.png">
 
 String comparison, as implemented by `string_grouper`, is essentially matrix 
 multiplication.  A DataFrame of strings is converted (tokenized) into a 
@@ -1003,38 +1003,33 @@ instead to get the same result:
 ![Block Matrix 2 2](https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockMatrix_2_2.png)
 
 But surprise ... the run-time of the process is sometimes drastically reduced 
-as a result.  For example, the speed-up of the following call is about 200% 
-(here, the DataFrame is divided into 4 blocks, that is, 
-4 blocks on the left &times; 4 on the right) compared to the same call with
-`n_blocks=(1, 1)` (the default) which is equivalent to `string_grouper`'s
-`match_strings()`:
+as a result.  For example, the speed-up of the following call is about 500% 
+(here, the DataFrame is divided into 200 blocks on the right operand, that is, 
+1 block on the left &times; 200 on the right) compared to the same call with no
+splitting \[`n_blocks=(1, 1)`, the default, which is equivalent to `match_strings`
+call of  `string_grouper` (versions 0.5.0 and earlier)\]:
 
 ```python
-# 668000 records:
+# 663000 records:
 companies = pd.read_csv('data/sec__edgar_company_info.csv')
 
 # the following call produces the same result as 
 # string_grouper using 
 # match_strings(companies['Company Name'])
 # but is more than 3 times faster!
-record_linkage(
+record_linkage( 
 	companies,
 	fields_2b_matched_fuzzily=[field('Company Name')],
-	n_blocks=(4, 4)
+	n_blocks=(1, 200)
 )
 ```
 
 
-Further exploration of the block number space shows that if the left operand 
-is not split but the right operand is, then even more gains in speed can be 
-made:
+Further exploration of the block number space (see plot above) has revealed that for any fixed 
+number of right blocks, the run-time gets longer the larger the number of left 
+blocks specified.  For this reason, it is recommended *not* to split the left matrix.
 
 ![Block Matrix 1 2](https://raw.githubusercontent.com/ParticularMiner/red_string_grouper/master/images/BlockMatrix_1_2.png)
-
-From the plot above, it can be seen that the optimum split-configuration 
-(run-time &approx;3 minutes) for the DataFrame specified there is when the 
-left operand is not split (#blocks = 1) and the right operand is split into 
-six blocks (#nblocks = 6).
 
 So what are the optimum block number values for any given DataFrame? That is 
 anyone's guess, and the answer may vary from computer to computer.  

@@ -389,6 +389,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
             block_ranges_left = divide_by(n_blocks[0], self._master)
         block_ranges_right = divide_by(n_blocks[1], self._master)
         max_n_matches = self._max_n_matches
+        self._true_max_n_matches = 0
         for left_block in block_ranges_left:
             left_matrix = self._get_left_tf_idf_matrix(left_block)
             for right_block in block_ranges_right:
@@ -399,9 +400,11 @@ class PersistentCorpusStringGrouper(StringGrouper):
                 right_matrix = self._get_right_tf_idf_matrix(right_block)
 
                 # Calculate the matches using the cosine similarity
-                matches, self._true_max_n_matches = self._build_matches(
+                matches, block_true_max_n_matches = self._build_matches(
                     left_matrix, right_matrix
                 )
+                self._true_max_n_matches = \
+                    max(block_true_max_n_matches, self._true_max_n_matches)
                 
                 # build match-lists from matrix
                 r, c = matches.nonzero()
@@ -441,8 +444,10 @@ class PersistentCorpusStringGrouper(StringGrouper):
 
         try:
             # Calculate the matches using the cosine similarity
-            matches, self._true_max_n_matches = self._build_matches(
+            matches, block_true_max_n_matches = self._build_matches(
                 left_matrix, right_matrix)
+            self._true_max_n_matches = \
+                max(block_true_max_n_matches, self._true_max_n_matches)
         except OverflowError:
             left_matrix = None
             right_matrix = None
@@ -484,6 +489,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
         self._c = np.array([], dtype=np.int64)
         self._d = np.array([], dtype=self._config.tfidf_matrix_dtype)
         self._matches_list = pd.DataFrame()
+        self._true_max_n_matches = 0
         
         # do the matching
         if n_blocks:
@@ -496,7 +502,7 @@ class PersistentCorpusStringGrouper(StringGrouper):
             self._r, self._c, self._d = awesome_topn(
                 self._r, self._c, self._d,
                 self._max_n_matches,
-                self._config.number_of_processes
+                n_jobs=self._config.number_of_processes
             )
         
         # force symmetries to be respected?
@@ -544,4 +550,3 @@ class PersistentCorpusStringGrouper(StringGrouper):
         return pd.DataFrame({'master_side': c,
                              'dupe_side': r,
                              'similarity': d})
-        return matches_list

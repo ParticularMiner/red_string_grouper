@@ -25,4 +25,5 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install red_string_grouper
+        python -c "from red_string_grouper import record_linkage, field, field_pair; help(field); help(field_pair);"
         

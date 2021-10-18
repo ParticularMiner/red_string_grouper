@@ -88,7 +88,7 @@ sparse_dot_topn_threaded_ext = Extension(
 
 setup(
     name='red_string_grouper',
-    version='0.1.0-4',
+    version='0.1.0-5',
     description='Row Equivalence Discoverer (red) based on string_grouper. '
     'This package finds similarities between rows of one or two tables.',
     keywords='record-linkage string-comparison cosine-similarity tf-idf'

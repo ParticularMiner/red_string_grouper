@@ -209,16 +209,11 @@ def record_linkage(data_frames,
 
     def weed_out_trivial_matches(matches):
         num_indexes = matches.index.nlevels//2
-        return matches[
-            functools.reduce(
-                lambda a, b: a | b,
-                [
-                    ((matches.index.get_level_values(i) !=
-                      matches.index.get_level_values(i + num_indexes))
-                     for i in range(num_indexes))
-                ]
-            )
-        ]
+        return matches[functools.reduce(
+            lambda a, b: a | b,
+            [(matches.index.get_level_values(i) !=
+              matches.index.get_level_values(i + num_indexes))
+              for i in range(num_indexes)])]
 
     def build_column_precursor_to(df, exact_field_value_pairs):
         exact_df = df.iloc[:, 0:0]
@@ -324,8 +319,9 @@ def record_linkage(data_frames,
         data_frame2 = data_frames[1]
 
     index_name_list1 = get_index_names(data_frame1)
-    index_name_list2 = get_index_names(
-        data_frame2) if data_frame2 is not None else index_name_list1
+    index_name_list2 = (get_index_names(data_frame2) 
+                        if data_frame2 is not None 
+                        else index_name_list1)
     match_indexes = prepend(
         index_name_list1, prefix='left_') + prepend(
             index_name_list2, prefix='right_')

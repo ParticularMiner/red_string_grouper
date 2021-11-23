@@ -88,7 +88,7 @@ sparse_dot_topn_threaded_ext = Extension(
 
 setup(
     name='red_string_grouper',
-    version='0.1.0-5',
+    version='0.1.1',
     description='Row Equivalence Discoverer (red) based on string_grouper. '
     'This package finds similarities between rows of one or two tables.',
     keywords='record-linkage string-comparison cosine-similarity tf-idf'
@@ -105,7 +105,10 @@ setup(
         # Setuptools 18.0 properly handles Cython extensions.
         'setuptools>=42',
         'cython>=0.29.15',
-        'string_grouper>=0.5.0'
+        'numpy>=1.16.6', # select this version for Py2/3 compatible
+        'sparse_dot_topn_for_blocks>=0.3.1',
+        'topn>=0.0.6',
+        'string_grouper>=0.6.1'
     ],
     install_requires=[
         # Setuptools 18.0 properly handles Cython extensions.
@@ -114,7 +117,7 @@ setup(
         'numpy>=1.16.6', # select this version for Py2/3 compatible
         'sparse_dot_topn_for_blocks>=0.3.1',
         'topn>=0.0.6',
-        'string_grouper>=0.5.0'
+        'string_grouper>=0.6.1'
     ],
     zip_safe=False,
     packages=find_packages(),

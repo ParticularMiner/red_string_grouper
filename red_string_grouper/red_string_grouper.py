@@ -270,13 +270,20 @@ def record_linkage(data_frames,
                              '\'fields_2b_matched_fuzzily\' must be a list of '
                              'tuples.  Each tuple being a triple: '
                              '(<field name>, <weight>, <field_kwargs>).')
-        if not(isinstance(fields_2b_matched_exactly, list) and
-               all([(len(f) > 1 and isinstance(f[0], str) and
-                     isinstance(f[1], Number))
-                    for f in fields_2b_matched_exactly])):
+        if not(
+            fields_2b_matched_exactly is None
+            or isinstance(fields_2b_matched_exactly, list)
+            and all([
+                (
+                    len(f) > 1
+                    and isinstance(f[0], str)
+                    and isinstance(f[1], Number)
+                ) for f in fields_2b_matched_exactly
+            ])
+        ):
             raise ValueError('When \'data_frames\' is a single DataFrame, '
-                             '\'fields_2b_matched_exactly\' must be a list of '
-                             'tuples.  Each tuple being a pair: '
+                             '\'fields_2b_matched_exactly\' must be None or '
+                             'a list of tuples.  Each tuple being a pair: '
                              '(<field name>, <weight>).')
     else:
         if not(isinstance(fields_2b_matched_fuzzily, list) and
@@ -291,14 +298,22 @@ def record_linkage(data_frames,
                              'quadruple: '
                              '(<field name1>, <field name2>, <weight>, '
                              '<field_kwargs>).')
-        if not(isinstance(fields_2b_matched_exactly, list) and
-               all([(len(f) > 2 and isinstance(f[0], str) and
-                     isinstance(f[1], str) and isinstance(f[2], Number))
-                    for f in fields_2b_matched_exactly])):
+        if not(
+            fields_2b_matched_exactly is None
+            or isinstance(fields_2b_matched_exactly, list)
+            and all([
+                (
+                    len(f) > 2
+                    and isinstance(f[0], str)
+                    and isinstance(f[1], str)
+                    and isinstance(f[2], Number)
+                ) for f in fields_2b_matched_exactly
+            ])
+        ):
             raise ValueError('When \'data_frames\' is a list of two '
                              'DataFrames, \'fields_2b_matched_exactly\' must '
-                             'be a list of tuples.  Each tuple being a '
-                             'triple: '
+                             'be None or a list of tuples.  Each tuple being '
+                             'a triple: '
                              '(<field name1>, <field name2>, <weight>).')
 
     # Validate given kwargs
